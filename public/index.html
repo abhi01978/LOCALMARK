@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local Service Marketplace – Ola Style</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #f7f7f7; }
+    .phone { 
+      width: 100%; 
+      max-width: 430px; 
+      height: 100vh; 
+      overflow-y: auto; 
+      background: #ffffff; 
+      margin: auto; 
+      border-radius: 25px; 
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2); 
+      position: relative; 
+      z-index: 1; /* map behind sidebar */
+    }
+    .card { 
+      background: white; 
+      border-radius: 20px; 
+      box-shadow: 0 6px 18px rgba(0,0,0,0.1); 
+      transition: transform 0.2s; 
+    }
+    .card:hover { 
+      transform: translateY(-3px); 
+      box-shadow: 0 12px 25px rgba(0,0,0,0.15); 
+    }
+    #map { 
+      border-radius: 20px; 
+      height: 300px; 
+      width: 100%; 
+      z-index: 0; 
+    }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+</head>
+<body class="flex justify-center items-center min-h-screen">
+
+<div class="phone">
+
+  <!-- NAVBAR -->
+  <div class="fixed top-0 left-0 right-0 bg-white/95 backdrop-blur-md flex justify-between items-center px-5 py-3 shadow-sm z-20">
+    <img id="menuBtn" src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/list.svg" class="w-6 cursor-pointer"/>
+    <div class="flex items-center gap-3">
+      <span class="bg-orange-500 text-white px-3 py-1 rounded-full text-sm font-bold">Orders 3</span>
+      <div class="w-10 h-10 rounded-full bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white font-bold text-lg">U</div>
+    </div>
+  </div>
+
+  <!-- SIDEBAR -->
+  <div id="sidebar" class="fixed top-0 left-0 w-72 h-full bg-white shadow-2xl p-6 transform -translate-x-full transition-all duration-300 z-50">
+    <div class="flex justify-between mb-6">
+      <h2 class="text-2xl font-bold text-orange-600">Menu</h2>
+      <button id="closeBtn" class="text-3xl">&times;</button>
+    </div>
+    <ul class="space-y-4 text-lg">
+      <li class="p-3 rounded-xl hover:bg-orange-100 cursor-pointer">Home Services</li>
+      <li class="p-3 rounded-xl hover:bg-orange-100 cursor-pointer">Food Delivery</li>
+      <li class="p-3 rounded-xl hover:bg-orange-100 cursor-pointer">Grocery</li>
+      <li class="p-3 rounded-xl hover:bg-orange-100 cursor-pointer">Electrician</li>
+      <li class="p-3 rounded-xl hover:bg-orange-100 cursor-pointer">Plumber</li>
+      <li class="p-3 rounded-xl hover:bg-orange-100 cursor-pointer">Salon at Home</li>
+      <li class="p-3 rounded-xl hover:bg-orange-100 cursor-pointer">My Orders</li>
+    </ul>
+  </div>
+  <div id="overlay" class="fixed inset-0 bg-black/50 hidden z-40"></div>
+
+  <!-- CONTENT -->
+  <div class="px-5 pt-20 pb-32">
+
+    <!-- SEARCH -->
+    <div class="relative">
+      <input type="text" placeholder="Search services..." class="w-full bg-gray-100 rounded-2xl py-3 pl-12 pr-4 text-lg shadow-inner placeholder-gray-500"/>
+      <img src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/search.svg" class="w-5 absolute left-4 top-1/2 -translate-y-1/2 opacity-60"/>
+    </div>
+
+    <!-- MAP -->
+    <div id="map" class="mt-5"></div>
+
+    <!-- OFFER CARD -->
+    <div class="mt-5 card p-5">
+      <div class="flex justify-between items-center">
+        <div>
+          <p class="text-lg font-bold text-orange-600">Best Deal Today</p>
+          <p class="text-xl font-bold mt-1">Plumber Visit – ₹149</p>
+        </div>
+        <button class="bg-green-500 text-white px-6 py-2 rounded-xl shadow font-bold hover:scale-105 transition">Book</button>
+      </div>
+    </div>
+
+    <!-- QUICK SERVICES -->
+    <h2 class="text-2xl font-bold mt-7 mb-3">Quick Services</h2>
+    <div class="grid grid-cols-2 gap-4">
+      
+      <div class="card p-5 text-center">
+        <img src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/wrench.svg" class="w-12 mx-auto"/>
+        <p class="mt-2 font-semibold text-lg">Plumber</p>
+      </div>
+
+      <div class="card p-5 text-center">
+        <img src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/scissors.svg" class="w-12 mx-auto"/>
+        <p class="mt-2 font-semibold text-lg">Salon</p>
+      </div>
+
+      <div class="card p-5 text-center">
+        <img src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/lightning.svg" class="w-12 mx-auto"/>
+        <p class="mt-2 font-semibold text-lg">Electrician</p>
+      </div>
+
+      <div class="card p-5 text-center">
+        <img src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/hammer.svg" class="w-12 mx-auto"/>
+        <p class="mt-2 font-semibold text-lg">Carpenter</p>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- BOTTOM NAVIGATION -->
+  <div class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t py-3 flex justify-around items-center shadow-md z-20">
+    <div class="flex flex-col items-center text-orange-600">
+      <img src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/house-door-fill.svg" class="w-6"/>
+      <span class="text-xs font-bold">Home</span>
+    </div>
+    <div class="flex flex-col items-center opacity-70">
+      <img src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/grid.svg" class="w-6"/>
+      <span class="text-xs">Services</span>
+    </div>
+    <div class="w-16 h-16 bg-gradient-to-br from-orange-500 to-red-500 text-white text-3xl rounded-full flex items-center justify-center shadow-xl -mt-8">+</div>
+    <div class="flex flex-col items-center opacity-70">
+      <img src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/cart.svg" class="w-6"/>
+      <span class="text-xs">Cart</span>
+    </div>
+    <div class="flex flex-col items-center opacity-70">
+      <img src="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/icons/person.svg" class="w-6"/>
+      <span class="text-xs">Profile</span>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+  // Initialize map without zoom controls and attribution
+  const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([0, 0], 13);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+  if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+          (position) => {
+              const lat = position.coords.latitude;
+              const lon = position.coords.longitude;
+              map.setView([lat, lon], 15);
+              L.marker([lat, lon]).addTo(map).bindPopup("You are here!").openPopup();
+          },
+          (err) => { alert("Location access denied or not available."); },
+          { enableHighAccuracy: true }
+      );
+  } else {
+      alert("Geolocation is not supported by this browser.");
+  }
+
+  // Sidebar toggle
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('overlay');
+  const menuBtn = document.getElementById('menuBtn');
+  const closeBtn = document.getElementById('closeBtn');
+
+  menuBtn.onclick = () => {
+      sidebar.classList.remove('-translate-x-full');
+      overlay.classList.remove('hidden');
+  };
+  closeBtn.onclick = overlay.onclick = () => {
+      sidebar.classList.add('-translate-x-full');
+      overlay.classList.add('hidden');
+  };
+</script>
+
+</body>
+</html>

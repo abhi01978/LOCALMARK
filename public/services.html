@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuickLocal - Find Services</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" />
+  <style>
+   
+    .red-dot { 
+      background: #ff0000; width: 18px; height: 18px; border: 4px solid white; border-radius: 50%; 
+      box-shadow: 0 0 20px rgba(255,0,0,0.8); animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,0,0,0.7); } 70% { box-shadow: 0 0 0 10px rgba(255,0,0,0); } 100% { box-shadow: 0 0 0 0 rgba(255,0,0,0); } }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- Fixed Header -->
+  <header class="bg-black/95 backdrop-blur-sm text-white py-5 fixed top-0 left-0 right-0 z-50 shadow-2xl">
+    <div class="max-w-7xl mx-auto flex justify-between items-center px-5">
+      <h1 class="text-2xl sm:text-3xl font-extrabold tracking-wider">QuickLocal</h1>
+      <div class="flex items-center gap-4">
+        <span id="userName" class="hidden sm:block font-bold text-lg"></span>
+        <button onclick="localStorage.clear(); location.href='/login'" 
+                class="bg-red-600 hover:bg-red-700 px-5 py-2.5 rounded-xl font-bold text-sm sm:text-base transition">
+          Logout
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 pt-32 pb-24">
+
+    <!-- Search Bar -->
+    <div class="max-w-2xl mx-auto mb-10 relative">
+      <input type="text" id="locationSearch" placeholder="Enter your city (Ghaziabad, Noida, Delhi...)"
+        class="w-full px-6 py-5 pl-16 text-lg sm:text-xl rounded-full border-2 border-gray-300 focus:border-orange-500 outline-none shadow-2xl transition">
+      <i class="fa-solid fa-magnifying-glass absolute left-6 top-1/2 -translate-y-1/2 text-2xl text-gray-500"></i>
+    </div>
+
+    <div id="map" class="h-64 sm:h-96 rounded-3xl mb-12 shadow-xl z-0"></div>
+
+    <h2 class="text-3xl sm:text-4xl font-extrabold text-center my-12 text-gray-800">
+      Popular Services in <span id="currentCityDisplay" class="text-orange-600">Ghaziabad</span>
+    </h2>
+
+    <!-- Categories Grid -->
+    <div id="categoriesContainer" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 mb-20"></div>
+
+    <!-- Providers Section -->
+    <section id="providersSection" class="hidden">
+      <div class="max-w-4xl mx-auto">
+        <button onclick="goBack()" class="mb-6 text-orange-600 font-bold text-lg flex items-center gap-3 hover:gap-4 transition-all">
+          Back to Categories
+        </button>
+
+        <h3 class="text-3xl sm:text-4xl font-bold mb-10 text-gray-800" id="categoryTitle"></h3>
+
+        <div id="providersList" class="space-y-5 mb-32"></div>
+
+        <!-- Sticky Book Now Button with Status -->
+        <div id="stickyBookButton" class="hidden fixed bottom-0 left-0 right-0 bg-black text-white py-5 z-40 shadow-2xl">
+          <div class="max-w-4xl mx-auto px-6 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="text-center sm:text-left">
+              <p class="text-sm opacity-90" id="bookingStatusText">Ready to book?</p>
+              <p class="text-xl font-bold" id="selectedServiceText">Plumber in Ghaziabad</p>
+            </div>
+            <button id="bookNowBtn" onclick="bookNow()" 
+                    class="bg-orange-600 hover:bg-orange-700 px-12 py-4 rounded-full font-bold text-lg transition">
+              Book Now
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
+
+  <script>
+    // Firebase Config
+    const firebaseConfig = {
+      apiKey: "AIzaSyAiHAhRvakTIAkJCxsfYBVMo-TfTmQwFnA",
+      authDomain: "astroguru-chat.firebaseapp.com",
+      projectId: "astroguru-chat",
+      storageBucket: "astroguru-chat.firebasestorage.app",
+      messagingSenderId: "709987887042",
+      appId: "1:709987887042:web:2eac33a465a2399c16d85b"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const messaging = firebase.messaging();
+
+    const VAPID_KEY = "BKgrJTz4gFHA_eMTQKxltSaqL3yr9YIcsHk6t8zviNaNG4-0ENcv7n8znT91BUFmqpqYaJS2jWzsQRHCUz8FV9A";
+
+    let map, markerGroup;
+    let allProviders = [];
+    let currentCity = "Ghaziabad";
+    let currentBookingId = null;
+
+    const cityCoords = {
+      ghaziabad: [28.6692, 77.4538], noida: [28.5355, 77.3910], delhi: [28.7041, 77.1025],
+      "greater noida": [28.4744, 77.5030], hapur: [28.7306, 77.7759], meerut: [28.9845, 77.7064]
+    };
+
+    function detectCityFromPhone(phone) {
+      if (!phone) return "Ghaziabad";
+      const num = phone.toString().slice(-10);
+      if (['9810','9811','9910','9812'].some(c => num.startsWith(c))) return "Delhi";
+      if (['9999','8800','9818'].some(c => num.startsWith(c))) return "Noida";
+      if (['9560','120','0120'].some(c => num.startsWith(c))) return "Ghaziabad";
+      if (['9971','9813'].some(c => num.startsWith(c))) return "Greater Noida";
+      if (num.startsWith('9760')) return "Hapur";
+      return "Ghaziabad";
+    }
+
+    function initMap() {
+      map = L.map('map').setView(cityCoords.ghaziabad, 12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      markerGroup = L.layerGroup().addTo(map);
+    }
+
+    function showProvidersOnMap(providers) {
+      markerGroup.clearLayers();
+      providers.forEach(p => {
+        const cityKey = p.detectedCity.toLowerCase().replace(" ", "") || "ghaziabad";
+        const base = cityCoords[cityKey] || cityCoords.ghaziabad;
+        const lat = base[0] + (Math.random() - 0.5) * 0.05;
+        const lng = base[1] + (Math.random() - 0.5) * 0.05;
+        L.marker([lat, lng], {
+          icon: L.divIcon({ html: '<div class="red-dot"></div>', iconSize: [26, 26], className: '' })
+        })
+        .bindPopup(`<b>${p.businessName || "Professional"}</b><br>${p.fullName}<br>${p.detectedCity}`)
+        .addTo(markerGroup);
+      });
+    }
+
+    async function loadProviders() {
+      try {
+        const res = await fetch('/api/providers');
+        const json = await res.json();
+        if (json.providers) {
+          allProviders = json.providers.map(p => ({ ...p, detectedCity: detectCityFromPhone(p.phone) }));
+        }
+      } catch (err) { console.error(err); }
+      updateView();
+    }
+
+    // Sound
+    const playSent = () => new Audio('https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3').play().catch(() => {});
+    const playConfirmed = () => new Audio('https://assets.mixkit.co/sfx/preview/mixkit-positive-interface-beep-221.mp3').play().catch(() => {});
+
+    // BOOK NOW FUNCTION
+    async function bookNow() {
+      const token = localStorage.getItem('token');
+      if (!token) return alert("Login first!"), location.href = "/login";
+
+      const category = document.getElementById('categoryTitle').textContent;
+      const btn = document.getElementById('bookNowBtn');
+      const status = document.getElementById('bookingStatusText');
+
+      btn.disabled = true;
+      btn.textContent = "Sending...";
+      status.textContent = "Notifying nearby providers...";
+
+      try {
+        const res = await fetch('/api/book-now', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+          body: JSON.stringify({ category, city: currentCity })
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          currentBookingId = data.bookingId;
+          btn.textContent = "Waiting...";
+          btn.classList.replace('bg-orange-600', 'bg-gray-600');
+          status.innerHTML = `Searching for ${category}... <span class="animate-pulse">Searching</span>`;
+          playSent();
+        } else {
+          alert(data.msg || "Try again");
+          btn.disabled = false;
+          btn.textContent = "Book Now";
+          btn.classList.replace('bg-gray-600', 'bg-orange-600');
+        }
+      } catch (err) {
+        alert("Network error!");
+        btn.disabled = false;
+        btn.textContent = "Book Now";
+      }
+    }
+
+    // Real-time Booking Accepted
+    messaging.onMessage((payload) => {
+      if (payload.data?.type === 'booking_accepted' && payload.data?.bookingId === currentBookingId) {
+        document.getElementById('bookingStatusText').textContent = "Booking Confirmed!";
+        const btn = document.getElementById('bookNowBtn');
+        btn.textContent = "Confirmed";
+        btn.className = "bg-green-600 px-12 py-4 rounded-full font-bold text-lg cursor-default";
+        playConfirmed();
+        setTimeout(() => alert("Your service is confirmed!\nProvider will contact you soon."), 500);
+      }
+    });
+
+    function renderList(list) {
+      const container = document.getElementById('providersList');
+      const sticky = document.getElementById('stickyBookButton');
+      container.innerHTML = '';
+
+      if (list.length === 0) {
+        container.innerHTML = `<p class="text-center text-xl text-gray-500 py-16">No providers found in ${currentCity}</p>`;
+        sticky.classList.add('hidden');
+        return;
+      }
+
+      sticky.classList.remove('hidden');
+      document.getElementById('selectedServiceText').textContent = `${document.getElementById('categoryTitle').textContent} in ${currentCity}`;
+
+      list.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'bg-white rounded-2xl p-6 border border-gray-200 hover:shadow-lg transition-shadow';
+        div.innerHTML = `
+          <h3 class="text-xl font-bold text-gray-900">
+            ${p.businessName || "Professional Service"} 
+            <span class="font-medium text-gray-600">• by ${p.fullName}</span>
+          </h3>
+          <div class="flex items-center gap-6 mt-3 text-sm text-gray-600">
+            <span><i class="fa-solid fa-location-dot text-orange-600"></i> ${p.detectedCity}</span>
+          </div>
+          <div class="mt-4 flex flex-wrap items-center gap-3 text-sm">
+            <span class="px-4 py-2 bg-orange-100 text-orange-700 rounded-full font-medium">
+              Visiting Charge: ₹99 - ₹199
+            </span>
+            <span class="px-4 py-2 bg-green-100 text-green-700 rounded-full font-medium flex items-center gap-1">
+              <i class="fa-solid fa-check"></i> Verified
+            </span>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    const categories = ["Electrician","Plumber","AC Repair","Carpenter","Painter","Cleaning","Pest Control","Beauty"];
+    function renderCategories() {
+      const container = document.getElementById('categoriesContainer');
+      container.innerHTML = '';
+      categories.forEach(cat => {
+        const div = document.createElement('div');
+        div.className = 'bg-white rounded-3xl shadow-2xl p-10 text-center cursor-pointer hover:scale-105 transition-all';
+        div.innerHTML = `<div class="text-7xl mb-4">
+          ${cat === "Electrician" ? "Lightning" : cat === "Plumber" ? "Wrench" : cat === "AC Repair" ? "Snowflake" : "Tools"}
+        </div><h3 class="text-xl font-bold">${cat}</h3>`;
+        div.onclick = () => {
+          document.getElementById('categoryTitle').textContent = cat;
+          document.getElementById('categoriesContainer').classList.add('hidden');
+          document.getElementById('providersSection').classList.remove('hidden');
+          const filtered = allProviders.filter(p => p.serviceCategory === cat && p.detectedCity === currentCity);
+          renderList(filtered);
+          showProvidersOnMap(filtered);
+        };
+        container.appendChild(div);
+      });
+    }
+
+    function goBack() {
+      document.getElementById('providersSection').classList.add('hidden');
+      document.getElementById('categoriesContainer').classList.remove('hidden');
+      currentBookingId = null;
+      document.getElementById('stickyBookButton').classList.add('hidden');
+      updateView();
+    }
+
+    document.getElementById('locationSearch').addEventListener('input', e => {
+      const q = e.target.value.trim().toLowerCase();
+      const matched = Object.keys(cityCoords).find(c => c.includes(q));
+      if (matched) {
+        currentCity = matched.split(' ').map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
+        map.setView(cityCoords[matched], 13);
+        goBack();
+      }
+    });
+
+    function updateView() {
+      document.getElementById('currentCityDisplay').textContent = currentCity;
+      showProvidersOnMap(allProviders.filter(p => p.detectedCity === currentCity));
+      renderCategories();
+    }
+
+    window.onload = () => {
+      initMap();
+      loadProviders();
+      renderCategories();
+
+      const user = JSON.parse(localStorage.getItem('user') || '{}');
+      document.getElementById('userName').textContent = user.fullName || 'User';
+
+      // Request Notification Permission + Save FCM Token
+      Notification.requestPermission().then(perm => {
+        if (perm === "granted") {
+          messaging.getToken({ vapidKey: VAPID_KEY }).then(token => {
+            if (token && localStorage.getItem('token')) {
+              fetch('/api/save-fcm-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+                body: JSON.stringify({ token })
+              });
+            }
+          });
+        }
+      });
+    };
+  </script>
+</body>
+</html>
