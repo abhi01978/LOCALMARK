@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calling…</title>
+</head>
+<body>
+    <h2 style="font-family: sans-serif;">Calling…</h2>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const autoCall = urlParams.get('autoCall');
+
+        if (autoCall) {
+            setTimeout(() => {
+                window.location.href = `tel:${autoCall}`;
+            }, 700);
+        }
+    </script>
+</body>
+</html>
