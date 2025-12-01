@@ -164,7 +164,6 @@ app.post('/api/book-now', authenticateToken, async (req, res) => {
     const customer = await User.findById(req.user.id);
     if (!customer) return res.status(404).json({ success: false, msg: "Customer not found" });
 
-    // SAB KUCH SAFE STRING BANAO PEHLE HI
     const customerName = String(customer.fullName || "Customer").trim();
     const customerPhone = String(customer.phone || "").replace(/\D/g, '').slice(-10);
     if (customerPhone.length < 10) return res.status(400).json({ success: false, msg: "Invalid phone" });
@@ -183,7 +182,6 @@ app.post('/api/book-now', authenticateToken, async (req, res) => {
 
     console.log('Booking Created:', booking._id);
 
-    // Sirf valid FCM token wale providers
     const providers = await User.find({
       role: 'provider',
       serviceCategory: category,
@@ -192,10 +190,7 @@ app.post('/api/book-now', authenticateToken, async (req, res) => {
 
     console.log(`Found ${providers.length} online providers`);
 
-    if (providers.length === 0) {
-      return res.json({ success: true, bookingId: booking._id, warning: "No providers online" });
-    }
-
+    const callUrl = `tel:${customerPhone}`;
     let sentCount = 0;
 
     for (const provider of providers) {
@@ -204,42 +199,61 @@ app.post('/api/book-now', authenticateToken, async (req, res) => {
           token: provider.fcmToken,
           notification: {
             title: "New Job!",
-            body: `${customerName} needs ${category}\nCall: ${customerPhone}`,
+            body: `${customerName} needs ${category}\nTap to Call: ${customerPhone}`,
           },
           data: {
-            // YE SAB 100% STRING HAI – GUARANTEED
             type: "new_booking",
             bookingId: booking._id.toString(),
             customerName: customerName,
             customerPhone: customerPhone,
             category: category,
             city: finalCity,
+            click_action: callUrl,
           },
           android: {
             priority: "high",
             notification: {
               sound: "default",
-              clickAction: "FLUTTER_NOTIFICATION_CLICK"
+              channel_id: "high_priority",
+              click_action: callUrl
             }
           },
+          // iOS KE LIYE YE SAFE FORMAT (NO fcm_options.link)
           apns: {
-            payload: { aps: { sound: "default" } }
+            payload: {
+              aps: {
+                alert: {
+                  title: "New Job!",
+                  body: `${customerName} needs ${category}\nCall: ${customerPhone}`
+                },
+                sound: "default",
+                "mutable-content": 1
+              }
+            },
+            headers: {
+              "apns-push-type": "background",
+              "apns-priority": "10"
+            }
           },
+          // Web/PWA ke liye ye perfect hai
           webpush: {
+            notification: {
+              click_action: callUrl,
+              requireInteraction: true,
+              icon: "/icon-192.png",
+              badge: "/badge.png"
+            },
             fcm_options: {
-              link: `tel:${customerPhone}`  // DIRECT CALL
+              link: callUrl
             }
           }
         };
 
-        // YE LINE ADD KI – SABSE SAFE
-        // Convert all data values to string (double safety)
-        Object.keys(message.data).forEach(key => {
-          message.data[key] = String(message.data[key]);
-        });
+        // Sab data string mein convert (safety)
+        Object.keys(message.data).forEach(k => message.data[k] = String(message.data[k]));
 
         await admin.messaging().send(message);
-        console.log(`SUCCESS → ${provider.fullName} (${provider.phone})`);
+        console.log(`SUCCESS → ${provider.fullName} (${customerPhone}) [CALL READY]`);
         sentCount++;
 
       } catch (error) {
@@ -248,7 +262,7 @@ app.post('/api/book-now', authenticateToken, async (req, res) => {
         if (error.code === 'messaging/registration-token-not-registered' ||
             error.code === 'messaging/invalid-registration-token') {
           await User.updateOne({ _id: provider._id }, { $unset: { fcmToken: "" } });
-          console.log("Invalid FCM token removed");
+          console.log("Cleaned invalid token");
         }
       }
     }
@@ -257,11 +271,11 @@ app.post('/api/book-now', authenticateToken, async (req, res) => {
       success: true,
       bookingId: booking._id,
       sentTo: sentCount,
-      message: sentCount > 0 ? "Providers notified – Tap to Call!" : "No providers online"
+      message: sentCount > 0 ? "Providers notified – Tap to call instantly!" : "No providers online"
     });
 
   } catch (err) {
-    console.error('Book Now CRASH:', err);
+    console.error('Book Now ERROR:', err);
     res.status(500).json({ success: false, msg: "Server error" });
   }
 });
@@ -340,3 +354,4 @@ app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Open: http://localhost:${PORT}/services`);
 });
+
