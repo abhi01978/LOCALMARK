@@ -1,48 +1,55 @@
-importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
+// public/firebase-messaging-sw.js  ← PURA FILE ISSE REPLACE KAR DE
 
+importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/9.0.0/firebase-messaging-compat.js');
+
+// Apna Firebase config daal dena
 firebase.initializeApp({
-  apiKey: "AIzaSyAiHAhRvakTIAkJCxsfYBVMo-TfTmQwFnA",
+ apiKey: "AIzaSyAiHAhRvakTIAkJCxsfYBVMo-TfTmQwFnA",
   authDomain: "astroguru-chat.firebaseapp.com",
   projectId: "astroguru-chat",
   storageBucket: "astroguru-chat.firebasestorage.app",
   messagingSenderId: "709987887042",
-  appId: "1:709987887042:web:2eac33a465a2399c16d85b"
+  appId: "1:709987887042:web:2eac33a465a2399c16d85b",
 });
 
 const messaging = firebase.messaging();
-// Background notification click → direct call
+
+// Background notification — sirf simple dikhao
 messaging.onBackgroundMessage((payload) => {
   const title = payload.notification?.title || "New Job!";
-  const options = {
-    body: payload.notification?.body,
-    icon: '/icon.png',
-    badge: '/badge.png',
-    tag: payload.data?.bookingId,
-    data: payload.data,          // yeh important hai
-    actions: [
-      { action: 'call', title: 'Call Customer', icon: '/call-icon.png' },
-      { action: 'ignore', title: 'Ignore' }
-    ]
-  };
+  const body = payload.notification?.body || "Customer ko call karo";
 
-  self.registration.showNotification(title, options);
+  self.registration.showNotification(title, {
+    body: body,
+    icon: '/icon-192.png',
+    badge: '/badge-72.png',
+    tag: 'new-job-' + Date.now(),
+    data: payload.data,
+    silent: false,
+    requireInteraction: false
+  });
 });
 
-// Notification click pe direct call
-// NOTIFICATION CLICK → DIRECT CALL LAG JAYEGI!
+// Notification click handler — direct call
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const phone = event.notification.data?.customerPhone;
 
-  if (event.action === 'call' && phone) {
-    // DIRECT CALL LAG JAYEGI — KOI PAGE NAHI KHULEGA!
-    clients.openWindow(`tel:${phone}`);
-  } 
-  else if (event.action === 'later' || !event.action) {
-    // Agar sirf notification tap kiya (bina button ke) ya "later" dabaya
-    // To kuch mat khol — ya agar chahe to apna main page khol sakta hai
-    // Abhi ke liye kuch nahi khol rahe — sirf call option hai
-  }
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+
+      // If app is open → send phone & trigger dialer
+      if (clientList.length > 0) {
+        const client = clientList[0];
+        client.focus();
+        client.postMessage({ phone });
+        return;
+      }
+
+      // If app is NOT open → open call.html for auto call
+      return clients.openWindow('/call.html?autoCall=' + phone);
+    })
+  );
 });
