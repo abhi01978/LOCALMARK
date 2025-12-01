@@ -151,129 +151,120 @@ app.get('/api/providers', async (req, res) => {
   }
 });
 
-// =============== BOOK NOW - ULTRA DEBUG MODE ===============
+// =============== BOOK NOW – ULTIMATE 100% FIXED VERSION ===============
 app.post('/api/book-now', authenticateToken, async (req, res) => {
-  console.log('\n=== BOOK NOW REQUEST AAYA ===');
+  console.log('\n=== NEW BOOKING REQUEST ===');
   console.log('Customer ID:', req.user.id);
-  console.log('Request Body:', req.body);
+  console.log('Body:', req.body);
 
   try {
-    const { category } = req.body;
-    if (!category) {
-      console.log('Category missing!');
-      return res.status(400).json({ success: false, msg: "Category missing" });
-    }
+    const { category, city } = req.body;
+    if (!category) return res.status(400).json({ success: false, msg: "Category missing" });
 
     const customer = await User.findById(req.user.id);
-    if (!customer) {
-      console.log('Customer not found in DB');
-      return res.status(400).json({ success: false, msg: "Customer not found" });
-    }
-    console.log('Customer found:', customer.fullName, customer.phone);
+    if (!customer) return res.status(404).json({ success: false, msg: "Customer not found" });
+
+    // SAB KUCH SAFE STRING BANAO PEHLE HI
+    const customerName = String(customer.fullName || "Customer").trim();
+    const customerPhone = String(customer.phone || "").replace(/\D/g, '').slice(-10);
+    if (customerPhone.length < 10) return res.status(400).json({ success: false, msg: "Invalid phone" });
+
+    const finalCity = city || detectCityFromPhone(customer.phone);
 
     const booking = new Booking({
       customerId: customer._id,
-      customerName: customer.fullName,
-      customerPhone: customer.phone,
+      customerName,
+      customerPhone,
       serviceCategory: category,
-      status: 'pending'
+      status: 'pending',
+      city: finalCity
     });
     await booking.save();
-    console.log('Booking saved in DB:', booking._id);
 
-    // YE HAI 100% WORKING QUERY (MongoDB bug fix)
-    const allProviders = await User.find({
+    console.log('Booking Created:', booking._id);
+
+    // Sirf valid FCM token wale providers
+    const providers = await User.find({
       role: 'provider',
-      serviceCategory: category
-    }).select('fullName phone fcmToken businessName');
+      serviceCategory: category,
+      fcmToken: { $exists: true, $ne: null, $type: "string" }
+    }).select('fullName phone fcmToken');
 
-    // Filter only those who have valid FCM token
-    const providers = allProviders.filter(p => 
-      p.fcmToken && 
-      typeof p.fcmToken === 'string' && 
-      p.fcmToken.trim().length > 20
-    );
-
-    console.log(`Total providers in ${category}: ${allProviders.length}`);
-    console.log(`Online providers (with FCM token): ${providers.length}`);
+    console.log(`Found ${providers.length} online providers`);
 
     if (providers.length === 0) {
-      console.log('No providers online right now!');
-      return res.json({ 
-        success: true, 
-        bookingId: booking._id, 
-        warning: "No providers online" 
-      });
+      return res.json({ success: true, bookingId: booking._id, warning: "No providers online" });
     }
 
     let sentCount = 0;
-    for (const provider of providers) {
-      console.log(`Sending to: ${provider.fullName} (${provider.phone})`);
-      console.log('FCM Token:', provider.fcmToken.substring(0, 40) + '...');
 
+    for (const provider of providers) {
       try {
-        await admin.messaging().send({
+        const message = {
           token: provider.fcmToken,
           notification: {
             title: "New Job!",
-            body: `${customer.fullName} needs ${category} in ${detectCityFromPhone(customer.phone)}`
+            body: `${customerName} needs ${category}\nCall: ${customerPhone}`,
           },
           data: {
-            type: 'new_booking',
+            // YE SAB 100% STRING HAI – GUARANTEED
+            type: "new_booking",
             bookingId: booking._id.toString(),
-            customerName: customer.fullName,
-            customerPhone: customer.phone,
-            category: category
+            customerName: customerName,
+            customerPhone: customerPhone,
+            category: category,
+            city: finalCity,
           },
           android: {
-            priority: 'high',
+            priority: "high",
             notification: {
-              sound: 'default',
-              clickAction: 'FLUTTER_NOTIFICATION_CLICK'
+              sound: "default",
+              clickAction: "FLUTTER_NOTIFICATION_CLICK"
             }
           },
           apns: {
-            payload: {
-              aps: {
-                sound: 'default'
-              }
+            payload: { aps: { sound: "default" } }
+          },
+          webpush: {
+            fcm_options: {
+              link: `tel:${customerPhone}`  // DIRECT CALL
             }
           }
+        };
+
+        // YE LINE ADD KI – SABSE SAFE
+        // Convert all data values to string (double safety)
+        Object.keys(message.data).forEach(key => {
+          message.data[key] = String(message.data[key]);
         });
 
-        console.log(`SUCCESS: Notification sent to ${provider.phone}`);
+        await admin.messaging().send(message);
+        console.log(`SUCCESS → ${provider.fullName} (${provider.phone})`);
         sentCount++;
 
       } catch (error) {
-        console.log(`FAILED for ${provider.phone}: ${error.message}`);
+        console.log(`FAILED → ${provider.phone}: ${error.message}`);
 
-        // Agar token invalid ho gaya ho to delete kar do
         if (error.code === 'messaging/registration-token-not-registered' ||
             error.code === 'messaging/invalid-registration-token') {
-          console.log('Invalid token, removing from DB...');
-          await User.updateOne(
-            { _id: provider._id },
-            { $unset: { fcmToken: "" } }
-          );
+          await User.updateOne({ _id: provider._id }, { $unset: { fcmToken: "" } });
+          console.log("Invalid FCM token removed");
         }
       }
     }
-
-    console.log(`FINAL RESULT: ${sentCount}/${providers.length} notifications sent\n`);
 
     res.json({
       success: true,
       bookingId: booking._id,
       sentTo: sentCount,
-      message: sentCount > 0 ? "Providers notified!" : "No one online"
+      message: sentCount > 0 ? "Providers notified – Tap to Call!" : "No providers online"
     });
 
   } catch (err) {
-    console.log('BOOK NOW CRASHED:', err);
+    console.error('Book Now CRASH:', err);
     res.status(500).json({ success: false, msg: "Server error" });
   }
 });
-
 // =============== SAVE FCM TOKEN - DEBUG ===============
 // YE PURA ROUTE REPLACE KAR DE
 app.post('/api/save-fcm-token', authenticateToken, async (req, res) => {
@@ -309,83 +300,7 @@ app.post('/api/save-fcm-token', authenticateToken, async (req, res) => {
   }
 });
 
-// server.js mein ye route add kar de
-app.post('/api/accept-booking', authenticateToken, async (req, res) => {
-  try {
-    const { bookingId } = req.body;
-    const provider = await User.findById(req.user.id);
-    
-    if (provider.role !== 'provider') {
-      return res.status(403).json({ msg: "Only providers can accept" });
-    }
 
-    const booking = await Booking.findById(bookingId);
-    if (!booking) return res.status(404).json({ msg: "Booking not found" });
-
-    // Agar pehle se kisi ne accept kar liya
-    if (booking.status === 'accepted') {
-      return res.json({ 
-        alreadyAccepted: true, 
-        message: "Kisi aur provider ne accept kar liya!" 
-      });
-    }
-
-    // Accept kar diya
-    booking.status = 'accepted';
-    booking.acceptedBy = provider._id;
-    await booking.save();
-
-    console.log(`Booking accepted by ${provider.fullName}`);
-
-    // Customer ko notification bhej
-    const customer = await User.findById(booking.customerId);
-    if (customer?.fcmToken) {
-      await admin.messaging().send({
-        token: customer.fcmToken,
-        notification: {
-          title: "Booking Confirmed!",
-          body: `${provider.fullName} (${provider.businessName || provider.fullName}) ne aapki booking accept kar li. Wo aapko call karenge!`
-        },
-        data: { type: 'booking_accepted' }
-      });
-    }
-
-    // Baaki providers ko "kisi aur ne le liya" bhej
-    const otherProviders = await User.find({
-      role: 'provider',
-      serviceCategory: booking.serviceCategory,
-      _id: { $ne: provider._id },
-      fcmToken: { $exists: true, $ne: null }
-    });
-
-    for (const p of otherProviders) {
-      if (p.fcmToken) {
-        await admin.messaging().send({
-          token: p.fcmToken,
-          notification: {
-            title: "Job Miss Ho Gaya!",
-            body: `Ek ${booking.serviceCategory} ki booking kisi aur provider ne le li.`
-          },
-          data: { type: 'job_taken' }
-        });
-      }
-    }
-
-    // Provider ko customer details bhej
-    res.json({
-      success: true,
-      customer: {
-        name: booking.customerName,
-        phone: booking.customerPhone
-      },
-      message: "Booking accepted! Customer ko call kar do!"
-    });
-
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({ msg: "Server error" });
-  }
-});
 // =============== ACCEPT BOOKING (Provider Side) ===============
 app.post('/api/accept-booking', authenticateToken, async (req, res) => {
   try {
