@@ -30,19 +30,19 @@ messaging.onBackgroundMessage((payload) => {
 });
 
 // Notification click pe direct call
+// NOTIFICATION CLICK → DIRECT CALL LAG JAYEGI!
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  if (event.action === 'call') {
-    const phone = event.notification.data?.customerPhone;
-    if (phone) {
-      // Direct call laga de
-      clients.openWindow(`tel:${phone}`);
-    } else {
-      clients.openWindow('/provider-dashboard.html');
-    }
-  } else {
-    // normal click
-    clients.openWindow('/provider-dashboard.html');
+  const phone = event.notification.data?.customerPhone;
+
+  if (event.action === 'call' && phone) {
+    // DIRECT CALL LAG JAYEGI — KOI PAGE NAHI KHULEGA!
+    clients.openWindow(`tel:${phone}`);
+  } 
+  else if (event.action === 'later' || !event.action) {
+    // Agar sirf notification tap kiya (bina button ke) ya "later" dabaya
+    // To kuch mat khol — ya agar chahe to apna main page khol sakta hai
+    // Abhi ke liye kuch nahi khol rahe — sirf call option hai
   }
 });
