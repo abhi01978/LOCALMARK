@@ -1,4 +1,3 @@
-// public/firebase-messaging-sw.js
 importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js');
 
@@ -14,39 +13,22 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
-  if (payload.data?.type === 'new_booking') {
-    const customerPhone = payload.data.customerPhone;
-
-    return self.registration.showNotification("New Job Alert!", {
-      body: `${payload.notification.body}`,
-      icon: "/icon-192.png",
-      badge: "/badge.png",
-      tag: payload.data.bookingId, // duplicate prevent
-      actions: [
-        {
-          action: 'call',
-          title: 'Call Now',
-          icon: '/phone-icon.png'
-        }
-      ],
-      data: { phone: customerPhone, bookingId: payload.data.bookingId }
-    });
-  }
+  const title = payload.notification?.title || "New Job!";
+  const options = {
+    body: payload.notification?.body || "Tap to call customer",
+    icon: "/icon-192.png",
+    badge: "/badge.png",
+    tag: payload.data?.bookingId,
+    data: { phone: payload.data?.customerPhone },
+    actions: [{ action: "call", title: "Call Now" }]
+  };
+  self.registration.showNotification(title, options);
 });
 
-// Notification click → direct call
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-
-  if (event.action === 'call' || !event.action) {
-    const phone = event.notification.data.phone;
-    clients.matchAll().then(clientsArr => {
-      if (clientsArr.length > 0) {
-        clientsArr[0].postMessage({ action: 'CALL_CUSTOMER', phone });
-      } else {
-        // fallback
-        clients.openWindow(`tel:${phone}`);
-      }
-    });
+  const phone = event.notification.data?.phone;
+  if (phone) {
+    clients.openWindow(`tel:${phone}`);
   }
 });
