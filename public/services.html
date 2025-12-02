@@ -15,6 +15,11 @@
     }
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,0,0,0.7); } 70% { box-shadow: 0 0 0 10px rgba(255,0,0,0); } 100% { box-shadow: 0 0 0 0 rgba(255,0,0,0); } }
   </style>
+  <script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/firebase-messaging-sw.js');
+  }
+</script>
 </head>
 <body class="bg-gray-50 min-h-screen">
 
@@ -83,7 +88,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-messaging-compat.js"></script>
 
-  <script>
+ <script>
     // Firebase Config
     const firebaseConfig = {
       apiKey: "AIzaSyAiHAhRvakTIAkJCxsfYBVMo-TfTmQwFnA",
@@ -95,7 +100,6 @@
     };
     firebase.initializeApp(firebaseConfig);
     const messaging = firebase.messaging();
-
     const VAPID_KEY = "BKgrJTz4gFHA_eMTQKxltSaqL3yr9YIcsHk6t8zviNaNG4-0ENcv7n8znT91BUFmqpqYaJS2jWzsQRHCUz8FV9A";
 
     let map, markerGroup;
@@ -151,11 +155,11 @@
       updateView();
     }
 
-    // Sound
+    // Sounds
     const playSent = () => new Audio('https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3').play().catch(() => {});
     const playConfirmed = () => new Audio('https://assets.mixkit.co/sfx/preview/mixkit-positive-interface-beep-221.mp3').play().catch(() => {});
 
-    // BOOK NOW FUNCTION
+    // BOOK NOW
     async function bookNow() {
       const token = localStorage.getItem('token');
       if (!token) return alert("Login first!"), location.href = "/login";
@@ -174,8 +178,8 @@
           headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
           body: JSON.stringify({ category, city: currentCity })
         });
-
         const data = await res.json();
+
         if (data.success) {
           currentBookingId = data.bookingId;
           btn.textContent = "Waiting...";
@@ -183,7 +187,7 @@
           status.innerHTML = `Searching for ${category}... <span class="animate-pulse">Searching</span>`;
           playSent();
         } else {
-          alert(data.msg || "Try again");
+          alert(data.msg || "No providers available");
           btn.disabled = false;
           btn.textContent = "Book Now";
           btn.classList.replace('bg-gray-600', 'bg-orange-600');
@@ -195,38 +199,63 @@
       }
     }
 
-    // Real-time Booking Accepted
+    // === REAL-TIME NOTIFICATIONS ===
     messaging.onMessage((payload) => {
+      console.log("Message received in foreground:", payload);
+
+      // Customer side: Booking accepted
       if (payload.data?.type === 'booking_accepted' && payload.data?.bookingId === currentBookingId) {
         document.getElementById('bookingStatusText').textContent = "Booking Confirmed!";
         const btn = document.getElementById('bookNowBtn');
         btn.textContent = "Confirmed";
         btn.className = "bg-green-600 px-12 py-4 rounded-full font-bold text-lg cursor-default";
         playConfirmed();
-        setTimeout(() => alert("Your service is confirmed!\nProvider will contact you soon."), 500);
+        setTimeout(() => {
+          alert("Your service is confirmed!\nProvider will call you shortly.");
+        }, 500);
+      }
+
+      // Provider side: Job missed
+      if (payload.data?.type === 'booking_missed') {
+        new Notification("Job Missed!", {
+          body: "Kisi aur provider ne job accept kar liya",
+          icon: "/icon-192.png"
+        });
       }
     });
 
+    // === SERVICE WORKER REGISTRATION (MUST FOR BACKGROUND CALL) ===
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/firebase-messaging-sw.js')
+        .then(reg => console.log('SW registered'))
+        .catch(err => console.log('SW error:', err));
+
+      // Receive message from SW (for call trigger)
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.action === 'CALL_CUSTOMER') {
+          window.location.href = `tel:${event.data.phone}`;
+        }
+      });
+    }
+
+    // Rest of your functions (renderList, renderCategories, etc.) same as before...
     function renderList(list) {
       const container = document.getElementById('providersList');
       const sticky = document.getElementById('stickyBookButton');
       container.innerHTML = '';
-
       if (list.length === 0) {
         container.innerHTML = `<p class="text-center text-xl text-gray-500 py-16">No providers found in ${currentCity}</p>`;
         sticky.classList.add('hidden');
         return;
       }
-
       sticky.classList.remove('hidden');
       document.getElementById('selectedServiceText').textContent = `${document.getElementById('categoryTitle').textContent} in ${currentCity}`;
-
       list.forEach(p => {
         const div = document.createElement('div');
         div.className = 'bg-white rounded-2xl p-6 border border-gray-200 hover:shadow-lg transition-shadow';
         div.innerHTML = `
           <h3 class="text-xl font-bold text-gray-900">
-            ${p.businessName || "Professional Service"} 
+            ${p.businessName || "Professional Service"}
             <span class="font-medium text-gray-600">• by ${p.fullName}</span>
           </h3>
           <div class="flex items-center gap-6 mt-3 text-sm text-gray-600">
@@ -246,6 +275,7 @@
     }
 
     const categories = ["Electrician","Plumber","AC Repair","Carpenter","Painter","Cleaning","Pest Control","Beauty"];
+
     function renderCategories() {
       const container = document.getElementById('categoriesContainer');
       container.innerHTML = '';
@@ -291,6 +321,7 @@
       renderCategories();
     }
 
+    // === ONLOAD ===
     window.onload = () => {
       initMap();
       loadProviders();
@@ -299,7 +330,7 @@
       const user = JSON.parse(localStorage.getItem('user') || '{}');
       document.getElementById('userName').textContent = user.fullName || 'User';
 
-      // Request Notification Permission + Save FCM Token
+      // Request Notification + Save FCM Token
       Notification.requestPermission().then(perm => {
         if (perm === "granted") {
           messaging.getToken({ vapidKey: VAPID_KEY }).then(token => {
@@ -308,12 +339,15 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + localStorage.getItem('token') },
                 body: JSON.stringify({ token })
-              });
+              }).then(res => res.json()).then(data => {
+                console.log("FCM Token Saved:", data);
+              }).catch(err => console.log("Token save failed", err));
             }
-          });
+          }).catch(err => console.log("FCM Token Error:", err));
         }
       });
     };
-  </script>
+</script>
 </body>
+
 </html>
