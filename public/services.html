@@ -15,11 +15,7 @@
     }
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,0,0,0.7); } 70% { box-shadow: 0 0 0 10px rgba(255,0,0,0); } 100% { box-shadow: 0 0 0 0 rgba(255,0,0,0); } }
   </style>
-  <script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/firebase-messaging-sw.js');
-  }
-</script>
+
 </head>
 <body class="bg-gray-50 min-h-screen">
 
@@ -351,3 +347,4 @@
 </body>
 
 </html>
+
