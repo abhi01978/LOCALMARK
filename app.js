@@ -316,6 +316,7 @@ app.post('/api/save-fcm-token', authenticateToken, async (req, res) => {
 
 
 // =============== ACCEPT BOOKING (Provider Side) ===============
+// ===== ACCEPT BOOKING - MODIFIED VERSION (Important!) =====
 app.post('/api/accept-booking', authenticateToken, async (req, res) => {
   try {
     const { bookingId } = req.body;
@@ -323,35 +324,68 @@ app.post('/api/accept-booking', authenticateToken, async (req, res) => {
     if (provider.role !== 'provider') return res.status(403).json({ msg: "Access denied" });
 
     const booking = await Booking.findById(bookingId);
-    if (!booking || booking.status !== 'pending') {
-      return res.status(400).json({ msg: "Already taken" });
+    if (!booking) return res.status(404).json({ msg: "Booking not found" });
+
+    // Agar pehle se kisi ne accept kar liya ho
+    if (booking.status === 'accepted') {
+      return res.json({ success: false, alreadyTaken: true, msg: "Kisi aur ne le liya!" });
     }
 
+    // Accept karo
     booking.status = 'accepted';
     booking.acceptedBy = provider._id;
+    booking.acceptedAt = new Date();
     await booking.save();
 
-    // Notify Customer
+    // 1. Customer ko batao confirmed hai
     const customer = await User.findById(booking.customerId);
     if (customer?.fcmToken) {
       await admin.messaging().send({
         token: customer.fcmToken,
-        notification: { title: "Booking Confirmed!", body: `Your ${booking.serviceCategory} is confirmed! Provider will call soon.` },
-        data: { type: 'booking_accepted', bookingId: booking._id.toString(), category: booking.serviceCategory }
+        notification: {
+          title: "Booking Confirmed!",
+          body: `${provider.fullName} ne accept kiya! Call aa raha hoga...`
+        },
+        data: { type: 'booking_accepted', bookingId: booking._id.toString() }
       });
     }
 
-    res.json({ success: true });
+    // 2. Baaki sab providers ko batao "missed" hai
+    const otherProviders = await User.find({
+      role: 'provider',
+      serviceCategory: booking.serviceCategory,
+      fcmToken: { $exists: true, $ne: null },
+      _id: { $ne: provider._id } // khud ko chhod do
+    });
+
+    const missedPromises = otherProviders.map(p => {
+      return admin.messaging().send({
+        token: p.fcmToken,
+        notification: {
+          title: "Missed Job",
+          body: "Ye job kisi aur provider ne le liya"
+        },
+        data: {
+          type: 'booking_missed',
+          bookingId: booking._id.toString(),
+          message: "Too late!"
+        }
+      }).catch(err => console.log("Missed notify failed for", p.phone));
+    });
+
+    await Promise.all(missedPromises);
+
+    res.json({ success: true, callCustomer: customer.phone });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ msg: "Error" });
+    res.status(500).json({ msg: "Server error" });
   }
 });
-
 // =============== START SERVER ===============
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   console.log(`Open: http://localhost:${PORT}/services`);
 });
+
 
